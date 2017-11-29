@@ -32,3 +32,4 @@
 *.app
 
 cmake_build_debug
+instances_triag
