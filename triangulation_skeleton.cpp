@@ -24,8 +24,8 @@ struct Point {
 
 unsigned long p = 0;
 
-float distsqrt(float x, float x1, float y, float y1);
-void reconstructTriangles(const vector<vector<int>> &triangleMinCostMatrix, vector<tuple<int, int, int>> &triangles, int i, int j);
+float calculate_distance(float x, float x1, float y, float y1);
+void get_triags(const vector<vector<int>> &min_triags, vector<tuple<int, int, int>> &triangles, int i, int j);
 
 float INF = std::numeric_limits<float>::max();
 
@@ -34,27 +34,27 @@ float INF = std::numeric_limits<float>::max();
 // A Dynamic programming based function to find minimum cost for convex polygon triangulation.
 tuple<vector<tuple<int, int, int>>, float> triangulate(vector<Point> points) {
 
-	float dist[p][p] = {0};
+	float distances[p][p] = {0};
 	float costs[p][p] = {0};
-    std::vector<std::vector<int> > triangleMinCostMatrix(p, std::vector<int>(p, -1));
+    std::vector<std::vector<int> > min_triags(p, std::vector<int>(p, -1));
 
 #pragma omp parallel for simd schedule(guided)
 	for (int i = 0; i < p; ++i)
 		for (int j = 0; j <= i; ++j)
-			dist[j][i] = dist[i][j] = distsqrt(points[i].x, points[i].y, points[j].x, points[j].y);
+			distances[j][i] = distances[i][j] = calculate_distance(points[i].x, points[i].y, points[j].x, points[j].y);
 
 	for (int diff = 0; diff < p; ++diff) {
-#pragma omp parallel for schedule(guided) num_threads(24) if(n > 1000)
+#pragma omp parallel for schedule(guided) num_threads(24) if(p > 1000)
 		for (int j = diff; j < p; ++j) {
 			int i = j - diff;
 			if (j > i + 1) {
 				float min_cost = INF;
-				float ji_dist =  dist[j][i];
+				float ji_dist =  distances[j][i];
 #pragma omp simd reduction(min : min_cost)
 				for (int k = i + 1; k < j; ++k) {
-					float cost = costs[i][k] + costs[j][k] + dist[i][k] + dist[j][k] + ji_dist;
+					float cost = costs[i][k] + costs[j][k] + distances[i][k] + distances[j][k] + ji_dist;
 					if (cost < min_cost) {
-                        triangleMinCostMatrix[i][j] = k;
+                        min_triags[i][j] = k;
 						min_cost = cost;
 					}
 				}
@@ -69,21 +69,21 @@ tuple<vector<tuple<int, int, int>>, float> triangulate(vector<Point> points) {
 
 
 	vector<tuple<int, int, int>> triangles;
-    reconstructTriangles(triangleMinCostMatrix, triangles, 0, p - 1);
+    get_triags(min_triags, triangles, 0, p - 1);
 	return make_tuple(move(triangles), costs[0][p-1]);
 }
 
-void reconstructTriangles(const vector<vector<int>> &triangleMinCostMatrix, vector<tuple<int, int, int>> &triangles, int i, int j) {
-    int k = triangleMinCostMatrix[i][j];
+void get_triags(const vector<vector<int>> &min_triags, vector<tuple<int, int, int>> &triangles, int i, int j) {
+    int k = min_triags[i][j];
     if(k > -1) {
         triangles.push_back(make_tuple(i, j, k));
-        reconstructTriangles(triangleMinCostMatrix,triangles,i,k);
-        reconstructTriangles(triangleMinCostMatrix,triangles,k,j);
+        get_triags(min_triags, triangles, i, k);
+        get_triags(min_triags, triangles, k, j);
     }
 }
 
-float distsqrt(float x1, float x2, float y1, float y2) {
-	return sqrt(pow(x1-y1, 2) + pow(x2 - y2, 2));
+float calculate_distance(float x1, float x2, float y1, float y2) {
+	return sqrt((pow(x1-y1, 2)) + (pow(x2 - y2, 2)));
 }
 
 vector<Point> readProblem(const string& inputFile)	{
