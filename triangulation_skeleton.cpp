@@ -12,6 +12,8 @@
 #include <vector>
 #include <stdint.h>
 
+
+
 using namespace std;
 using namespace std::chrono;
 
@@ -20,12 +22,68 @@ struct Point {
 	float x, y;
 };
 
+unsigned long p = 0;
+
+float distsqrt(float x, float x1, float y, float y1);
+void reconstructTriangles(const vector<vector<int>> &triangleMinCostMatrix, vector<tuple<int, int, int>> &triangles, int i, int j);
+
+float INF = std::numeric_limits<float>::max();
+
+
+
 // A Dynamic programming based function to find minimum cost for convex polygon triangulation.
 tuple<vector<tuple<int, int, int>>, float> triangulate(vector<Point> points) {
-	// TODO: Implement a parallel dynamic programming approach and reconstruct the solution.
-	float triagCost = 0.0f;
+
+	float dist[p][p] = {0};
+	float costs[p][p] = {0};
+    std::vector<std::vector<int> > triangleMinCostMatrix(p, std::vector<int>(p, -1));
+
+#pragma omp parallel for simd schedule(guided)
+	for (int i = 0; i < p; ++i)
+		for (int j = 0; j <= i; ++j)
+			dist[j][i] = dist[i][j] = distsqrt(points[i].x, points[i].y, points[j].x, points[j].y);
+
+	for (int diff = 0; diff < p; ++diff) {
+#pragma omp parallel for schedule(guided) num_threads(24) if(n > 1000)
+		for (int j = diff; j < p; ++j) {
+			int i = j - diff;
+			if (j > i + 1) {
+				float min_cost = INF;
+				float ji_dist =  dist[j][i];
+#pragma omp simd reduction(min : min_cost)
+				for (int k = i + 1; k < j; ++k) {
+					float cost = costs[i][k] + costs[j][k] + dist[i][k] + dist[j][k] + ji_dist;
+					if (cost < min_cost) {
+                        triangleMinCostMatrix[i][j] = k;
+						min_cost = cost;
+					}
+				}
+				costs[i][j] = min_cost;
+				costs[j][i] = min_cost;
+			} else {
+				costs[i][j] = 0;
+				costs[j][i] = 0;
+			}
+		}
+	}
+
+
 	vector<tuple<int, int, int>> triangles;
-	return make_tuple(move(triangles), triagCost);
+    reconstructTriangles(triangleMinCostMatrix, triangles, 0, p - 1);
+	return make_tuple(move(triangles), costs[0][p-1]);
+}
+
+void reconstructTriangles(const vector<vector<int>> &triangleMinCostMatrix, vector<tuple<int, int, int>> &triangles, int i, int j) {
+    int k = triangleMinCostMatrix[i][j];
+    if(k > -1) {
+        triangles.push_back(make_tuple(i, j, k));
+        reconstructTriangles(triangleMinCostMatrix,triangles,i,k);
+        reconstructTriangles(triangleMinCostMatrix,triangles,k,j);
+    }
+}
+
+float distsqrt(float x1, float x2, float y1, float y2) {
+	return sqrt(pow(x1-y1, 2) + pow(x2 - y2, 2));
 }
 
 vector<Point> readProblem(const string& inputFile)	{
@@ -45,7 +103,7 @@ vector<Point> readProblem(const string& inputFile)	{
 	} else {
 		throw invalid_argument("Cannot open the input file '"+inputFile+"' to read the problem.");
 	}
-
+	p = points.size();
 	return points;
 }
 
